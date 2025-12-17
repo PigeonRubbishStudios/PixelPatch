@@ -62,6 +62,11 @@
   #include "../usermods/usermod_v2_four_line_display_ALT/usermod_v2_four_line_display_ALT.h"
 #endif
 
+#ifdef USERMOD_DMX_DISPLAY
+  #include "../usermods/usermod_v2_dmx_display/usermod_v2_dmx_display.h"
+  #include "../usermods/usermod_v2_dmx_display/usermod_v2_dmx_display.cpp"
+#endif
+
 #ifdef USERMOD_ROTARY_ENCODER_UI
   #include "../usermods/usermod_v2_rotary_encoder_ui_ALT/usermod_v2_rotary_encoder_ui_ALT.h"
 #endif
@@ -293,6 +298,10 @@ void registerUsermods()
 
   #ifdef USERMOD_FOUR_LINE_DISPLAY
   UsermodManager::add(new FourLineDisplayUsermod());
+  #endif
+
+  #ifdef USERMOD_DMX_DISPLAY
+  UsermodManager::add(new DMXDisplay());
   #endif
 
   #ifdef USERMOD_ROTARY_ENCODER_UI
