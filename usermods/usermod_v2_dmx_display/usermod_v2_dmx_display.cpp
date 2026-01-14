@@ -14,8 +14,6 @@ const char DMXDisplay::_refreshRate[]     PROGMEM = "refreshRate-ms";
 const char DMXDisplay::_screenTimeOut[]   PROGMEM = "screenTimeOutSec";
 const char DMXDisplay::_flip[]            PROGMEM = "flip";
 const char DMXDisplay::_sleepMode[]       PROGMEM = "sleepMode";
-// const char DMXDisplay::_clockMode[]       PROGMEM = "clockMode";
-// const char DMXDisplay::_showSeconds[]     PROGMEM = "showSeconds";
 const char DMXDisplay::_busClkFrequency[] PROGMEM = "i2c-freq-kHz";
 const char DMXDisplay::_contrastFix[]     PROGMEM = "contrastFix";
 
@@ -43,10 +41,8 @@ void DMXDisplay::startDisplay() {
   u8x8->begin();
   setFlipMode(flip);
   setVcomh(contrastFix);
-  setContrast(contrast); //Contrast setup will help to preserve OLED lifetime. In case OLED need to be DMXAddressghter increase number up to 255
+  setContrast(contrast); //Contrast setup will help to preserve OLED lifetime. In case OLED need to be brighter increase number up to 255
   setPowerSave(0);
-  //drawString(0, 0, "Loading...");
-  // overlayLogo(3500);
   setMode(MODE_NET);
 }
 
@@ -76,21 +72,6 @@ void DMXDisplay::draw2x2String(uint8_t col, uint8_t row, const char *string) {
   u8x8->draw2x2String(col, row, string);
   drawing = false;
 }
-// void DMXDisplay::drawGlyph(uint8_t col, uint8_t row, char glyph, const uint8_t *font, bool ignoreLH) {
-//   if (type == NONE || !enabled) return;
-//   drawing = true;
-//   u8x8->setFont(font);
-//   if (!ignoreLH && lineHeight==2) u8x8->draw1x2Glyph(col, row, glyph);
-//   else                            u8x8->drawGlyph(col, row, glyph);
-//   drawing = false;
-// }
-// void DMXDisplay::draw2x2Glyph(uint8_t col, uint8_t row, char glyph, const uint8_t *font) {
-//   if (type == NONE || !enabled) return;
-//   drawing = true;
-//   u8x8->setFont(font);
-//   u8x8->draw2x2Glyph(col, row, glyph);
-//   drawing = false;
-// }
 uint8_t DMXDisplay::getCols() {
   if (type==NONE || !enabled) return 0;
   return u8x8->getCols();
@@ -170,15 +151,17 @@ void DMXDisplay::setup() {
   }
 
   startDisplay();
-  // onUpdateBegin(false);  // create Display task
+  onUpdateBegin(false);  // create Display task
   initDone = true;
 }
 
 // gets called every time WiFi is (re-)connected. Initialize own network
 // interfaces here
 void DMXDisplay::connected() {
-  knownSsid = WiFi.SSID();       //apActive ? apSSID : WiFi.SSID(); //apActive ? WiFi.softAPSSID() :
-  knownIp   = Network.localIP(); //apActive ? IPAddress(4, 3, 2, 1) : Network.localIP();
+  knownSsid = apActive ? apSSID : WiFi.SSID();
+  // knownSsid = WiFi.SSID();
+  knownIp   = Network.localIP(); 
+  wakeDisplay();
   setMode(MODE_NET);
 }
 
@@ -190,10 +173,6 @@ void DMXDisplay::loop() {
   #if !(defined(ARDUINO_ARCH_ESP32) && defined(FLD_ESP32_USE_THREADS))
     if (!enabled || strip.isUpdating()) return;
   #endif
-
-  if (!Display_Task && (interfacesInited || apActive)) {
-    onUpdateBegin(false);
-  }
 
 
     unsigned long now = millis();
@@ -224,7 +203,6 @@ void DMXDisplay::loop() {
         unsigned long pressDuration = now - btnPressStart;
 
         if (pressDuration >= 2000 && !longPressHandled) {
-            Serial.println(F("[DMXDisplay] LONG PRESS -> MODE_OFF"));
 
             setMode(MODE_OFF);
 
@@ -248,12 +226,11 @@ void DMXDisplay::loop() {
         // ---- SHORT PRESS ONLY ----
         if (pressDuration < 2000) {
             if (currentMode == MODE_OFF) {
-                Serial.println(F("[DMXDisplay] SHORT PRESS (wakeup) -> MODE_NET"));
+                // Serial.println(F("[DMXDisplay] SHORT PRESS (wakeup) -> MODE_NET"));
                 setMode(MODE_NET);
             } else {
                 DisplayMode next = (currentMode == MODE_DMX) ? MODE_NET : MODE_DMX;
-                Serial.printf("[DMXDisplay] SHORT PRESS -> toggle to %s\n",
-                              next == MODE_DMX ? "DMX" : "NET");
+                // Serial.printf("[DMXDisplay] SHORT PRESS -> toggle to %s\n", next == MODE_DMX ? "DMX" : "NET");
                 setMode(next);
             }
         }
@@ -331,9 +308,6 @@ void DMXDisplay::loop() {
   #endif
 }
 
-
-
-
 /**
  * Redraw the screen (but only if things have changed
  * or if forceRedraw).
@@ -359,12 +333,14 @@ void DMXDisplay::redraw(bool forceRedraw) {
     clear();
   } else if (wificonnected != interfacesInited) {   // WiFi state changed
     wificonnected = interfacesInited;
+    wakeDisplay();
 
     if (currentMode == MODE_NET && !displayTurnedOff) {
       // If we're on the network screen, refresh the network info
       updateNetworkInfo();
       lastRedraw = now;
     }
+    
     return;
   } else if (knownDMXAddress != DMXAddress && currentMode == MODE_DMX) {
       if (displayTurnedOff && nightlightActive) { knownDMXAddress = DMXAddress; }
@@ -401,21 +377,6 @@ void DMXDisplay::redraw(bool forceRedraw) {
   wificonnected        = interfacesInited;
 
   // Do the actual drawing
-  // First row: Icons
-  // draw2x2GlyphIcons();
-  // drawArrow();
-  // drawStatusIcons();
-
-  // Second row
-  // updateDMX();
-  // updateSpeed();
-  // updateIntensity();
-
-  // Third row
-  // showCurrentEffectOrPalette(knownPalette, JSON_palette_names, 2); //Palette info
-
-  // // Fourth row
-  // showCurrentEffectOrPalette(knownMode, JSON_mode_names, 3); //Effect Mode info
   if (!enabled || displayTurnedOff) return;
 
   switch (currentMode) {
@@ -424,7 +385,7 @@ void DMXDisplay::redraw(bool forceRedraw) {
       break;
 
     case MODE_NET:
-      updateNetworkInfo();   // we will add this next
+      updateNetworkInfo();
       break;
 
     case MODE_OFF:
@@ -447,9 +408,6 @@ void DMXDisplay::updateDMX() {
 
   knownDMXAddress  = DMXAddress;
   knownDMXUniverse = e131Universe;
-
-  // If an overlay is active, don’t overwrite it
-  // if (overlayUntil != 0) return;
 
   lockRedraw = true;
 
@@ -507,15 +465,13 @@ void DMXDisplay::updateNetworkInfo() {
   {
     knownSsid = apSSID;
   }
-  
-                   // AP mode active
 
+  // AP mode active
   String rightTitle = Network.isConnected() ? "WiFi" : "AP";
   int rtCol = getCols() - rightTitle.length();
   if (rtCol < 0) rtCol = 0;
   drawString(rtCol, 0, rightTitle.c_str());
   
-
   String centerSSID = knownSsid;
 
   static unsigned long lastScroll = 0;
@@ -614,54 +570,28 @@ void DMXDisplay::onUpdateBegin(bool init) {
     if (Display_Task)
       vTaskResume(Display_Task);
     else
-      xTaskCreate(
-        [](void * par) {
-          const TickType_t xFrequency =
-            REFRESH_RATE_MS * portTICK_PERIOD_MS / 2;
+      xTaskCreatePinnedToCore(
+        [](void * par) {                  // Function to implement the task
+          // see https://www.freertos.org/vtaskdelayuntil.html
+          const TickType_t xFrequency = REFRESH_RATE_MS * portTICK_PERIOD_MS / 2;
           TickType_t xLastWakeTime = xTaskGetTickCount();
-
-          for (;;) {
-            vTaskDelayUntil(&xLastWakeTime, xFrequency);
+          for(;;) {
+            delay(1); // DO NOT DELETE THIS LINE! It is needed to give the IDLE(0) task enough time and to keep the watchdog happy.
+                      // taskYIELD(), yield(), vTaskDelay() and esp_task_wdt_feed() didn't seem to work.
+            vTaskDelayUntil(&xLastWakeTime, xFrequency); // release CPU, by doing nothing for REFRESH_RATE_MS millis
             DMXDisplay::getInstance()->redraw(false);
           }
         },
-        "DMXD",
-        3072,
-        NULL,
-        0,              // 👈 IDLE PRIORITY
-        &Display_Task
+        "4LD",                // Name of the task
+        3072,                 // Stack size in words
+        NULL,                 // Task input parameter
+        1,                    // Priority of the task (not idle)
+        &Display_Task,        // Task handle
+        ARDUINO_RUNNING_CORE
       );
-
   }
 #endif
 }
-
-/*
-  * addToJsonInfo() can be used to add custom entries to the /json/info part of the JSON API.
-  * Creating an "u" object allows you to add custom key/value pairs to the Info section of the WLED web UI.
-  * Below it is shown how this could be used for e.g. a light sensor
-  */
-//void DMXDisplay::addToJsonInfo(JsonObject& root) {
-  //JsonObject user = root["u"];
-  //if (user.isNull()) user = root.createNestedObject("u");
-  //JsonArray data = user.createNestedArray(F("dmx_display"));
-  //data.add(F("Loaded."));
-//}
-
-/*
-  * addToJsonState() can be used to add custom entries to the /json/state part of the JSON API (state object).
-  * Values in the state object may be modified by connected clients
-  */
-//void DMXDisplay::addToJsonState(JsonObject& root) {
-//}
-
-/*
-  * readFromJsonState() can be used to receive data clients send to the /json/state part of the JSON API (state object).
-  * Values in the state object may be modified by connected clients
-  */
-//void DMXDisplay::readFromJsonState(JsonObject& root) {
-//  if (!initDone) return;  // prevent crash on boot applyPreset()
-//}
 
 void DMXDisplay::appendConfigData() {
   oappend(F("dd=addDropdown('DMXDisplay','type');"));
@@ -715,7 +645,7 @@ void DMXDisplay::addToConfig(JsonObject& root) {
 
   top["button_pin"] = buttonPin;
 
-  DEBUG_PRINTLN(F("4 Line Display config saved."));
+  DEBUG_PRINTLN(F("DMX Display config saved."));
 
 }
 

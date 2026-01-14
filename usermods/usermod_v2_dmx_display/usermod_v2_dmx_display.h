@@ -86,10 +86,10 @@ class DMXDisplay : public Usermod {
       uint32_t ioFrequency = 1000000;  // in Hz (minimum is 500kHz, baseline is 1MHz and maximum should be 20MHz)
       #endif
 
-      int8_t buttonPin = 21;
+      int8_t buttonPin = -1;
   
       DisplayType type = FLD_TYPE;    // display type
-      bool flip = true;              // flip display 180°
+      bool flip = false;              // flip display 180°
       uint8_t contrast = 10;          // screen contrast
       uint8_t lineHeight = 1;         // 1 row or 2 rows
       uint16_t refreshRate = REFRESH_RATE_MS;     // in ms
