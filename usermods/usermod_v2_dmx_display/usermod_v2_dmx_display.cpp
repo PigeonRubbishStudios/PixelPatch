@@ -158,7 +158,7 @@ void DMXDisplay::setup() {
 // gets called every time WiFi is (re-)connected. Initialize own network
 // interfaces here
 void DMXDisplay::connected() {
-  knownSsid = apActive ? apSSID : WiFi.SSID();
+  knownSsid = !Network.isConnected() ? apSSID : WiFi.SSID();
   // knownSsid = WiFi.SSID();
   knownIp   = Network.localIP(); 
   wakeDisplay();
@@ -322,7 +322,7 @@ void DMXDisplay::redraw(bool forceRedraw) {
   while (drawing && millis()-now < 25) delay(1); // wait if someone else is drawing
   if (drawing || lockRedraw) return;
 
-  if (apActive && WLED_WIFI_CONFIGURED && now<15000) {
+  if (!Network.isConnected() && WLED_WIFI_CONFIGURED && now<15000) {
     knownSsid = apSSID;
     return;
   }
@@ -457,11 +457,11 @@ void DMXDisplay::updateNetworkInfo() {
 
   drawString(0, 0, serverDescription);
 
-  if (Network.isConnected())
+  if (wificonnected)
   {
     knownSsid = WiFi.SSID();
   }
-  else if (apActive)
+  else
   {
     knownSsid = apSSID;
   }
