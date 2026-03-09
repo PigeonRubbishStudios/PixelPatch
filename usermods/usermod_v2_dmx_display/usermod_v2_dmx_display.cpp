@@ -24,6 +24,22 @@ bool searchingForWiFi = false;
 DMXDisplay *DMXDisplay::instance = nullptr;
 #endif
 
+void DMXDisplay::drawGlyph(uint8_t col, uint8_t row, char glyph, const uint8_t *font, bool ignoreLH) {
+  if (type == NONE || !enabled) return;
+  drawing = true;
+  u8x8->setFont(font);
+  if (!ignoreLH && lineHeight==2) u8x8->draw1x2Glyph(col, row, glyph);
+  else                            u8x8->drawGlyph(col, row, glyph);
+  drawing = false;
+}
+void DMXDisplay::draw2x2Glyph(uint8_t col, uint8_t row, char glyph, const uint8_t *font) {
+  if (type == NONE || !enabled) return;
+  drawing = true;
+  u8x8->setFont(font);
+  u8x8->draw2x2Glyph(col, row, glyph);
+  drawing = false;
+}
+
 // some displays need this to properly apply contrast
 void DMXDisplay::setVcomh(bool highContrast) {
   if (type == NONE || !enabled) return;
@@ -488,8 +504,28 @@ void DMXDisplay::updateDMX() {
   
   
   String modeName = getDMXModeName(knownDMXMode);
-  center(modeName, getCols());
+  // center(modeName, getCols());
   drawString(0, 3, modeName.c_str());
+
+  char LEDCount[20];
+
+  if (strip.getSegmentsNum() > 1) {
+    uint16_t seg1 = strip.getSegment(0).length();
+    uint16_t seg2 = strip.getSegment(1).length();
+
+    snprintf(LEDCount, sizeof(LEDCount), "%d/%d", seg1, seg2);
+  } else {
+    snprintf(LEDCount, sizeof(LEDCount), "%d", strip.getLengthTotal());
+  }
+
+  int ledRtCol = getCols() - strlen(LEDCount);
+  if (ledRtCol < 0) ledRtCol = 0;
+
+  drawString(ledRtCol, 3, LEDCount);
+
+  // drawing = true;
+  // drawGlyph(15, 3, 13, u8x8_dmx_display_WLED_icons_2x2);
+  // drawing = false;
 
   lockRedraw = false;
 }
@@ -628,18 +664,18 @@ void DMXDisplay::refreshWiFiState() {
 
 String DMXDisplay::getDMXModeName(uint8_t mode) {
   switch (mode) {
-    case 0: return "Mode: Disabled";
-    case 1: return "Mode: Single RGB";
-    case 2: return "Mode: Single DRGB";
-    case 3: return "Mode: Effect";
-    case 4: return "Mode: Effect + W";
-    case 5: return "Mode: Multiple RGB";
-    case 6: return "Mode: Multiple DRGB";
-    case 7: return "Mode: Multiple RGBW";
-    case 8: return "Mode: Effect Segment";
-    case 9: return "Mode: Effect Segment + W";
-    case 10: return "Mode: Preset";
-    default: return "Mode: Unknown";
+    case 0: return "Disabled";
+    case 1: return "Single RGB";
+    case 2: return "Single DRGB";
+    case 3: return "Effect";
+    case 4: return "Effect + W";
+    case 5: return "Multiple RGB";
+    case 6: return "Multiple DRGB";
+    case 7: return "Multiple RGBW";
+    case 8: return "Effect Segment";
+    case 9: return "Effect Segment + W";
+    case 10: return "Preset";
+    default: return "Unknown";
   }
 }
 

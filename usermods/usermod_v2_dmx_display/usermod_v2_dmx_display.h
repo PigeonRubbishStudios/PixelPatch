@@ -158,6 +158,8 @@ class DMXDisplay : public Usermod {
       void setContrast(uint8_t contrast);
       void drawString(uint8_t col, uint8_t row, const char *string, bool ignoreLH=false);
       void draw2x2String(uint8_t col, uint8_t row, const char *string);
+      void drawGlyph(uint8_t col, uint8_t row, char glyph, const uint8_t *font, bool ignoreLH=false);
+      void draw2x2Glyph(uint8_t col, uint8_t row, char glyph, const uint8_t *font);
       uint8_t getCols();
       void clear();
       void setPowerSave(uint8_t save);
