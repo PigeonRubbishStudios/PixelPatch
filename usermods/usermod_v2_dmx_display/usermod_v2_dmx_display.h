@@ -36,9 +36,10 @@
   #endif
 #endif
 
+
 // When to time out to the clock or blank the screen
 // if SLEEP_MODE_ENABLED.
-#define SCREEN_TIMEOUT_MS  60*1000    // 1 min
+#define SCREEN_TIMEOUT_MS  15*1000    // 15 seconds
 
 // Minimum time between redrawing screen in ms
 #define REFRESH_RATE_MS 1000
@@ -86,7 +87,7 @@ class DMXDisplay : public Usermod {
       uint32_t ioFrequency = 1000000;  // in Hz (minimum is 500kHz, baseline is 1MHz and maximum should be 20MHz)
       #endif
 
-      int8_t buttonPin = -1;
+      int8_t buttonPin = 21;
   
       DisplayType type = FLD_TYPE;    // display type
       bool flip = false;              // flip display 180°
@@ -107,10 +108,12 @@ class DMXDisplay : public Usermod {
       IPAddress knownIp = IPAddress(4, 3, 2, 1);
       uint8_t knownDMXAddress = 0;
       uint8_t knownDMXUniverse = 0;
+      uint8_t knownDMXMode = 0;
       bool wificonnected = interfacesInited;
       bool powerON = true;
 
       bool displayTurnedOff = false;
+
       unsigned long nextUpdate = 0;
       unsigned long lastRedraw = 0;
   
@@ -133,13 +136,8 @@ class DMXDisplay : public Usermod {
 
       DisplayMode currentMode = MODE_NET;
 
-      // Button handling
-      unsigned long buttonDownTime = 0;
-      bool buttonHeld = false;
-      bool buttonWasPressed = false;
+      // Button handling (state is kept inside loop() as static locals)
 
-      bool btnLastState = true;    // pull-up based, so HIGH = unpressed
-      unsigned long btnPressStart = 0;
 
 
   
@@ -196,6 +194,12 @@ class DMXDisplay : public Usermod {
   
       void updateDMX();
       void updateNetworkInfo();
+
+      void drawSplash();
+
+      void refreshWiFiState();
+
+      String getDMXModeName(uint8_t mode);
   
   
       /**
@@ -205,6 +209,9 @@ class DMXDisplay : public Usermod {
        * to wake up the screen.
        */
       bool wakeDisplay();
+
+      // Return true if the device is currently acting as an access point
+      bool isAPActive() const;
   
       // /**
       //  * Allows you to show one line and a glyph as overlay for a period of time.

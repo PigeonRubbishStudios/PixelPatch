@@ -16,8 +16,9 @@ const char DMXDisplay::_flip[]            PROGMEM = "flip";
 const char DMXDisplay::_sleepMode[]       PROGMEM = "sleepMode";
 const char DMXDisplay::_busClkFrequency[] PROGMEM = "i2c-freq-kHz";
 const char DMXDisplay::_contrastFix[]     PROGMEM = "contrastFix";
+bool searchingForWiFi = false;
 
-bool apActiveBool = false;
+// Helper removed: use DMXDisplay::isAPActive() instead of a global variable
 
 #if defined(ARDUINO_ARCH_ESP32) && defined(FLD_ESP32_USE_THREADS)
 DMXDisplay *DMXDisplay::instance = nullptr;
@@ -33,6 +34,16 @@ void DMXDisplay::setVcomh(bool highContrast) {
   u8x8_cad_EndTransfer(u8x8_struct);
 }
 
+bool DMXDisplay::isAPActive() const {
+  // Prefer checking actual WiFi mode instead of only connection state.
+  // If the device is running AP-only, AP is active.
+  // If running AP+STA, only treat AP as active when the station is not connected.
+  WiFiMode_t mode = WiFi.getMode();
+  if (mode == WIFI_MODE_AP) return true;
+  if (mode == WIFI_MODE_APSTA && !Network.isConnected()) return true;
+  return false;
+}
+
 void DMXDisplay::startDisplay() {
   if (type == NONE || !enabled) return;
   lineHeight = u8x8->getRows() > 4 ? 2 : 1;
@@ -43,6 +54,8 @@ void DMXDisplay::startDisplay() {
   setVcomh(contrastFix);
   setContrast(contrast); //Contrast setup will help to preserve OLED lifetime. In case OLED need to be brighter increase number up to 255
   setPowerSave(0);
+  drawSplash();
+  delay(5000);
   setMode(MODE_NET);
 }
 
@@ -114,7 +127,7 @@ void DMXDisplay::setup() {
 
   // check if pins are -1 and disable usermod as PinManager::allocateMultiplePins() will accept -1 as a valid pin
   if (isSPI) {
-    if (spi_sclk<0 || spi_mosi<0 || ioPin[0]<0 || ioPin[1]<0 || ioPin[1]<0) {
+    if (spi_sclk<0 || spi_mosi<0 || ioPin[0]<0 || ioPin[1]<0 || ioPin[2]<0) {
       type = NONE;
     } else {
       PinManagerPinType cspins[3] = { { ioPin[0], true }, { ioPin[1], true }, { ioPin[2], true } };
@@ -123,6 +136,7 @@ void DMXDisplay::setup() {
   } else {
     if (i2c_scl<0 || i2c_sda<0) { type=NONE; }
   }
+
 
   DEBUG_PRINTLN(F("Allocating display."));
   switch (type) {
@@ -151,6 +165,7 @@ void DMXDisplay::setup() {
   }
 
   startDisplay();
+  setMode(MODE_NET);   // forces redraw(true)
   onUpdateBegin(false);  // create Display task
   initDone = true;
 }
@@ -158,11 +173,24 @@ void DMXDisplay::setup() {
 // gets called every time WiFi is (re-)connected. Initialize own network
 // interfaces here
 void DMXDisplay::connected() {
-  knownSsid = !Network.isConnected() ? apSSID : WiFi.SSID();
-  // knownSsid = WiFi.SSID();
-  knownIp   = Network.localIP(); 
+  // Use station SSID when actually connected; otherwise show AP SSID
+  clear();
+  refreshWiFiState();
+  if (WiFi.status() == WL_CONNECTED)
+  {
+    knownSsid = WiFi.SSID();
+    wificonnected = true;
+  } 
+  else 
+  {
+    knownSsid = apSSID;
+    wificonnected = false;
+  }
+  knownIp = Network.localIP();
   wakeDisplay();
+  clear();
   setMode(MODE_NET);
+  searchingForWiFi = false;
 }
 
 /**
@@ -254,15 +282,17 @@ void DMXDisplay::loop() {
             if (millis() - lastSSIDRefresh > 300) {
                 lastSSIDRefresh = millis();
 
-                // Build padded scroll buffer so text doesn't merge
                 static String scrollSrc;
-                static bool built = false;
+                static String lastSSID;
+                // static uint8_t scrollIndex = 0;
 
-                if (!built) {
-                    // 5 spaces padding looks clean on 128px width
-                    scrollSrc = "     " + knownSsid + "     ";
-                    built = true;
+                if (knownSsid != lastSSID) {
+                  scrollSrc = "     " + knownSsid + "     ";
+                  // scrollIndex = 0;
+                  lastSSID = knownSsid;
                 }
+
+
 
                 static uint8_t scrollIndex = 0;
                 scrollIndex = (scrollIndex + 1) % scrollSrc.length();
@@ -313,6 +343,7 @@ void DMXDisplay::loop() {
  * or if forceRedraw).
  */
 void DMXDisplay::redraw(bool forceRedraw) {
+  refreshWiFiState();
   bool needRedraw = false;
   unsigned long now = millis();
 
@@ -322,10 +353,20 @@ void DMXDisplay::redraw(bool forceRedraw) {
   while (drawing && millis()-now < 25) delay(1); // wait if someone else is drawing
   if (drawing || lockRedraw) return;
 
-  if (!Network.isConnected() && WLED_WIFI_CONFIGURED && now<15000) {
-    knownSsid = apSSID;
-    return;
+  // During the first seconds after boot, avoid querying WiFi state too eagerly.
+  // Only force AP SSID if station is not connected. This prevents showing the
+  // AP name when the device actually reconnected to WiFi quickly on reboot.
+  bool wifiReady = (WiFi.status() == WL_CONNECTED);
+
+  if (!wifiReady && WLED_WIFI_CONFIGURED && now < 14000) {
+    clear();
+    knownSsid = "Searching For WiFi...";
+    searchingForWiFi = true;
+    wificonnected = false;
   }
+
+
+
 
   // Check if values which are shown on display changed from the last time.
   if (forceRedraw) {
@@ -337,6 +378,7 @@ void DMXDisplay::redraw(bool forceRedraw) {
 
     if (currentMode == MODE_NET && !displayTurnedOff) {
       // If we're on the network screen, refresh the network info
+      refreshWiFiState();
       updateNetworkInfo();
       lastRedraw = now;
     }
@@ -347,6 +389,9 @@ void DMXDisplay::redraw(bool forceRedraw) {
       else if (!displayTurnedOff) { updateDMX(); lastRedraw = now; return; }
   } else if (knownDMXUniverse != e131Universe && currentMode == MODE_DMX) {
       if (displayTurnedOff && nightlightActive) { knownDMXUniverse = e131Universe; }
+      else if (!displayTurnedOff) { updateDMX(); lastRedraw = now; return; }
+  } else if (knownDMXMode != DMXMode && currentMode == MODE_DMX) {
+      if (displayTurnedOff && nightlightActive) { knownDMXMode = DMXMode; }
       else if (!displayTurnedOff) { updateDMX(); lastRedraw = now; return; }
   }
 
@@ -370,8 +415,8 @@ void DMXDisplay::redraw(bool forceRedraw) {
   // Update last known values.
   knownDMXAddress      = DMXAddress;
   knownDMXUniverse     = e131Universe;
-  apActiveBool         = Network.isConnected() ? false : true;
-  knownSsid            = apActiveBool ? apSSID : WiFi.SSID();
+  knownDMXMode         = DMXMode;
+  knownSsid            = (WiFi.status() == WL_CONNECTED) ? WiFi.SSID() : apSSID;
   knownPassword        = apPass;
   knownIp              = Network.localIP();
   wificonnected        = interfacesInited;
@@ -385,6 +430,7 @@ void DMXDisplay::redraw(bool forceRedraw) {
       break;
 
     case MODE_NET:
+      refreshWiFiState();
       updateNetworkInfo();
       break;
 
@@ -430,14 +476,20 @@ void DMXDisplay::updateDMX() {
   drawString(rtCol, 0, rightTitle.c_str());
 
   // ---------- DMX TEXT (true 2×2 large font) ----------
-  int textLen = strlen(dmxLine);
+  int dmxTextLen = strlen(dmxLine);
 
   // Character width doubles for 2×2 font
-  int col = (getCols() - (textLen * 2)) / 2;
-  if (col < 0) col = 0;
+  int dmxCenter = (getCols() - (dmxTextLen * 2)) / 2;
+  if (dmxCenter < 0) dmxCenter = 0;
 
   // Draw big DMX text — occupies row 2 & 3 automatically
-  draw2x2String(col, 2, dmxLine);
+  draw2x2String(dmxCenter, 1, dmxLine);
+
+  
+  
+  String modeName = getDMXModeName(knownDMXMode);
+  center(modeName, getCols());
+  drawString(0, 3, modeName.c_str());
 
   lockRedraw = false;
 }
@@ -457,39 +509,35 @@ void DMXDisplay::updateNetworkInfo() {
 
   drawString(0, 0, serverDescription);
 
-  if (wificonnected)
-  {
-    knownSsid = WiFi.SSID();
-  }
-  else
-  {
-    knownSsid = apSSID;
-  }
+  // Determine SSID to show: prefer station SSID if connected
+  // knownSsid = (WiFi.status() == WL_CONNECTED) ? WiFi.SSID() : apSSID;
 
   // AP mode active
-  String rightTitle = Network.isConnected() ? "WiFi" : "AP";
+  String rightTitle = isAPActive() ? "AP" : "WiFi";
   int rtCol = getCols() - rightTitle.length();
   if (rtCol < 0) rtCol = 0;
   drawString(rtCol, 0, rightTitle.c_str());
   
-  String centerSSID = knownSsid;
+  String centerSSID = searchingForWiFi ? "Searching For WiFi..." : knownSsid;
 
   static unsigned long lastScroll = 0;
-    static uint8_t index = 0;
+  static uint8_t index = 0;
 
-    if (centerSSID.length() > 8 && millis() - lastScroll > 400) {
-      index = (index + 1) % centerSSID.length();
-      lastScroll = millis();
-    }
+  if (centerSSID.length() > 8 && millis() - lastScroll > 400) {
+    index = (index + 1) % centerSSID.length();
+    lastScroll = millis();
+  }
 
-    String shown = (centerSSID.length() > 8)
-        ? centerSSID.substring(index) + " " + centerSSID.substring(0, index)
-        : centerSSID;
+  String shown = (centerSSID.length() > 8)
+      ? centerSSID.substring(index) + " " + centerSSID.substring(0, index)
+      : centerSSID;
 
-    int col = (getCols() - shown.length() * 2) / 2;
-    if (col < 0) col = 0;
+  int col = (getCols() - shown.length() * 2) / 2;
+  if (col < 0) col = 0;
 
-    draw2x2String(col, 1, shown.c_str());
+  draw2x2String(col, 1, shown.c_str());
+
+
 
   if (wificonnected)
   {
@@ -529,6 +577,73 @@ void DMXDisplay::setMode(DisplayMode m) {
   // Force an immediate full redraw of the new mode
   redraw(true);
 }
+
+void DMXDisplay::drawSplash() {
+  if (type == NONE || !enabled) return;
+
+  clear();
+  setPowerSave(0);
+  u8x8->clear();
+
+  for (uint8_t y = 0; y < 4; y++) {
+    for (uint8_t x = 0; x < 16; x++) {
+      const uint8_t* tile = &pixel_patch_logo[(x + y * 16) * 8];
+      u8x8->drawTile(x, y, 1, (uint8_t*)tile);
+    }
+  }
+
+  // u8x8->setFont(u8x8_font_chroma48medium8_r);
+
+  // const char* text = "[PixelPatch]";
+  // uint8_t len = strlen(text);
+
+  // uint8_t cols = getCols();
+  // uint8_t rows = u8x8->getRows();
+
+  // int col = (cols - len) / 2;
+  // if (col < 0) col = 0;
+
+  // int row = rows / 2;
+  // if (row > rows - 1) row = rows - 1;
+
+  // u8x8->drawString(col, row, text);
+}
+
+
+
+void DMXDisplay::refreshWiFiState() {
+  bool staConnected = (WiFi.status() == WL_CONNECTED);
+
+  if (staConnected) {
+    knownSsid = WiFi.SSID();
+    knownIp   = Network.localIP();
+    wificonnected = true;
+  } else if (isAPActive()) {
+    knownSsid = apSSID;
+    knownIp   = Network.localIP();
+    wificonnected = false;
+  }
+}
+
+
+String DMXDisplay::getDMXModeName(uint8_t mode) {
+  switch (mode) {
+    case 0: return "Mode: Disabled";
+    case 1: return "Mode: Single RGB";
+    case 2: return "Mode: Single DRGB";
+    case 3: return "Mode: Effect";
+    case 4: return "Mode: Effect + W";
+    case 5: return "Mode: Multiple RGB";
+    case 6: return "Mode: Multiple DRGB";
+    case 7: return "Mode: Multiple RGBW";
+    case 8: return "Mode: Effect Segment";
+    case 9: return "Mode: Effect Segment + W";
+    case 10: return "Mode: Preset";
+    default: return "Mode: Unknown";
+  }
+}
+
+
 
 /**
  * If there screen is off or in clock is displayed,
@@ -607,6 +722,7 @@ void DMXDisplay::appendConfigData() {
   oappend(F("addOption(dd,'SSD1309 SPI 128x64',8);"));
   oappend(F("addInfo('DMXDisplay:type',1,'<br><i class=\"warn\">Change may require reboot</i>','');"));
   oappend(F("addInfo('DMXDisplay:button_pin',0,'','Button Pin');"));
+
   oappend(F("addInfo('DMXDisplay:pin[]',0,'','SPI CS');"));
   oappend(F("addInfo('DMXDisplay:pin[]',1,'','SPI DC');"));
   oappend(F("addInfo('DMXDisplay:pin[]',2,'','SPI RST');"));
@@ -644,6 +760,7 @@ void DMXDisplay::addToConfig(JsonObject& root) {
   top[FPSTR(_busClkFrequency)] = ioFrequency/1000;
 
   top["button_pin"] = buttonPin;
+
 
   DEBUG_PRINTLN(F("DMX Display config saved."));
 
@@ -697,6 +814,7 @@ bool DMXDisplay::readFromConfig(JsonObject& root) {
   } else {
     DEBUG_PRINTLN(F(" config (re)loaded."));
     // changing parameters from settings page
+
     bool pinsChanged = false;
     for (unsigned i=0; i<3; i++) if (ioPin[i] != oldPin[i]) { pinsChanged = true; break; }
     if (pinsChanged || type!=newType) {
@@ -710,7 +828,7 @@ bool DMXDisplay::readFromConfig(JsonObject& root) {
         } else {
           // still SPI but pins changed
           PinManagerPinType cspins[3] = { { ioPin[0], true }, { ioPin[1], true }, { ioPin[2], true } };
-          if (ioPin[0]<0 || ioPin[1]<0 || ioPin[1]<0) { newType=NONE; }
+          if (ioPin[0]<0 || ioPin[1]<0 || ioPin[2]<0) { newType=NONE; }
           else if (!PinManager::allocateMultiplePins(cspins, 3, PinOwner::UM_DMXDisplay)) { newType=NONE; }
         }
       } else if (newSPI) {
@@ -719,7 +837,7 @@ bool DMXDisplay::readFromConfig(JsonObject& root) {
           newType=NONE;
         } else {
           PinManagerPinType pins[3] = { { ioPin[0], true }, { ioPin[1], true }, { ioPin[2], true } };
-          if (ioPin[0]<0 || ioPin[1]<0 || ioPin[1]<0) { newType=NONE; }
+          if (ioPin[0]<0 || ioPin[1]<0 || ioPin[2]<0) { newType=NONE; }
           else if (!PinManager::allocateMultiplePins(pins, 3, PinOwner::UM_DMXDisplay)) { newType=NONE; }
         }
       } else {

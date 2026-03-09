@@ -26,8 +26,8 @@
 
 //Defaults
 #define DEFAULT_CLIENT_SSID "Your_Network"
-#define DEFAULT_AP_SSID     WLED_BRAND "-AP"
-#define DEFAULT_AP_PASS     "wled1234"
+#define DEFAULT_AP_SSID     WLED_PRODUCT_NAME
+#define DEFAULT_AP_PASS     "prsPixelPatch"
 #define DEFAULT_OTA_PASS    "wledota"
 #define DEFAULT_MDNS_NAME   "x"
 
@@ -342,8 +342,8 @@
 */
 
 //Color orders
-#define COL_ORDER_GRB             0           //GRB(w),defaut
-#define COL_ORDER_RGB             1           //common for WS2811
+#define COL_ORDER_RGB             0           //GRB(w),defaut
+#define COL_ORDER_GRB             1           //common for WS2811
 #define COL_ORDER_BRG             2
 #define COL_ORDER_RBG             3
 #define COL_ORDER_BGR             4
@@ -519,7 +519,7 @@
 #endif
 
 #ifndef ABL_MILLIAMPS_DEFAULT
-  #define ABL_MILLIAMPS_DEFAULT 850   // auto lower brightness to stay close to milliampere limit
+  #define ABL_MILLIAMPS_DEFAULT 2700   // auto lower brightness to stay close to milliampere limit
 #else
   #if ABL_MILLIAMPS_DEFAULT == 0      // disable ABL
   #elif ABL_MILLIAMPS_DEFAULT < 250   // make sure value is at least 250
@@ -583,10 +583,10 @@
     #define DEFAULT_LED_PIN 2    // GPIO2 (D4) on Wemos D1 mini compatible boards, safe to use on any board
   #endif
 #else
-  #define DEFAULT_LED_PIN 16   // aligns with GPIO2 (D4) on Wemos D1 mini32 compatible boards (if it is unusable it will be reassigned in WS2812FX::finalizeInit())
+  #define DEFAULT_LED_PIN 13   // aligns with GPIO2 (D4) on Wemos D1 mini32 compatible boards (if it is unusable it will be reassigned in WS2812FX::finalizeInit())
 #endif
 #define DEFAULT_LED_TYPE TYPE_WS2812_RGB
-#define DEFAULT_LED_COUNT 30
+#define DEFAULT_LED_COUNT 8
 
 #define INTERFACE_UPDATE_COOLDOWN 1000 // time in ms to wait between websockets, alexa, and MQTT updates
 
