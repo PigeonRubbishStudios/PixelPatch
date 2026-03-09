@@ -25,7 +25,7 @@ def create_release(source):
         release_name = release_name_def.replace("\\\"", "")
         with open("package.json", "r") as package:
             version = json.load(package)["version"]        
-        release_file = os.path.join(OUTPUT_DIR, "release", f"WLED_{version}_{release_name}.bin")
+        release_file = os.path.join(OUTPUT_DIR, "release", f"PixelPatch_{version}_{release_name}.bin")
         release_gz_file = release_file + ".gz"
         print(f"Copying {source} to {release_file}")
         shutil.copy(source, release_file)
